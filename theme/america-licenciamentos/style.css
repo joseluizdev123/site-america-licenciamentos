@@ -1,0 +1,23 @@
+/*
+Theme Name: América Licenciamentos
+Theme URI: https://americalicenciamentos.com.br
+Author: Studio Artemis
+Author URI: https://studioartemis.com.br
+Description: Tema institucional da América Licenciamentos. Reproduz a página inicial validada no Figma, com conteúdo editável por Soluções, Clientes, Depoimentos, Perguntas frequentes, posts e Personalizar.
+Version: 1.0.0
+Requires at least: 6.3
+Tested up to: 6.8
+Requires PHP: 7.4
+Text Domain: america
+License: Proprietário
+GitHub Theme URI: https://github.com/studioartemis/america-licenciamentos-theme
+Primary Branch: main
+*/
+
+/*
+ * ATENÇÃO: o "GitHub Theme URI" acima é PROVISÓRIO (placeholder).
+ * Confirmar o repositório real antes de ativar atualizações pelo Git Updater.
+ *
+ * Este arquivo só identifica o tema para o WordPress.
+ * Os estilos do site ficam em assets/css/style.css (cópia idêntica do HTML estático validado).
+ */
