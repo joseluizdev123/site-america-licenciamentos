@@ -47,6 +47,8 @@ function america_seeder_page() {
 
 		<?php if ( 'ok' === $status ) : ?>
 			<div class="notice notice-success"><p><?php esc_html_e( 'Pronto! O conteúdo inicial foi importado.', 'america' ); ?></p></div>
+		<?php elseif ( 'hero_ok' === $status ) : ?>
+			<div class="notice notice-success"><p><?php esc_html_e( 'Pronto! As fotos do destaque principal foram para a Biblioteca de mídia.', 'america' ); ?></p></div>
 		<?php elseif ( 'parcial' === $status ) : ?>
 			<div class="notice notice-warning"><p><?php esc_html_e( 'A importação terminou com avisos (veja abaixo). Clique no botão de novo para tentar completar: o que já foi criado não é duplicado.', 'america' ); ?></p></div>
 		<?php elseif ( 'ja' === $status ) : ?>
@@ -86,10 +88,19 @@ function america_seeder_page() {
 				?>
 			</p>
 			<p><?php esc_html_e( 'Para alterar textos e imagens, use Aparência → Personalizar → Página inicial (América) e os menus Soluções, Clientes, Depoimentos, Perguntas frequentes e Posts.', 'america' ); ?></p>
+			<?php if ( america_seed_hero_images_missing() ) : ?>
+				<h2><?php esc_html_e( 'Imagens novas do destaque principal', 'america' ); ?></h2>
+				<p><?php esc_html_e( 'O tema ganhou um segundo modelo de destaque (“Sócio”). Este botão só leva as fotos dos dois modelos para a Biblioteca de mídia; nada mais é alterado.', 'america' ); ?></p>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<input type="hidden" name="action" value="america_seed_hero">
+					<?php wp_nonce_field( 'america_seed_hero', 'america_seed_hero_nonce' ); ?>
+					<?php submit_button( __( 'Importar imagens do destaque', 'america' ), 'secondary', 'submit', false ); ?>
+				</form>
+			<?php endif; ?>
 		<?php else : ?>
 			<p><?php esc_html_e( 'Este botão cria de uma vez o conteúdo do layout aprovado, para você só editar depois:', 'america' ); ?></p>
 			<ul style="list-style:disc;padding-left:20px">
-				<li><?php esc_html_e( 'imagens e logos na Biblioteca de mídia;', 'america' ); ?></li>
+				<li><?php esc_html_e( 'imagens e logos na Biblioteca de mídia (incluindo as fotos dos dois modelos do destaque principal);', 'america' ); ?></li>
 				<li><?php esc_html_e( '9 soluções (abas de documentos);', 'america' ); ?></li>
 				<li><?php esc_html_e( '30 clientes (10 na faixa do topo e 20 na grade de cases) e 5 setores;', 'america' ); ?></li>
 				<li><?php esc_html_e( '1 depoimento e 9 perguntas frequentes;', 'america' ); ?></li>
@@ -152,6 +163,41 @@ function america_seeder_handle() {
 add_action( 'admin_post_america_seed', 'america_seeder_handle' );
 
 /**
+ * Importa só as imagens do hero em sites que já tinham feito a importação
+ * antes do modelo "Sócio" existir (o botão principal some depois da primeira importação).
+ */
+function america_seeder_handle_hero() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( esc_html__( 'Você não tem permissão para fazer isso.', 'america' ), '', array( 'response' => 403 ) );
+	}
+	check_admin_referer( 'america_seed_hero', 'america_seed_hero_nonce' );
+
+	$redirect = admin_url( 'themes.php?page=america-importar' );
+
+	if ( get_transient( 'america_seed_lock' ) ) {
+		wp_safe_redirect( add_query_arg( 'america_seed', 'ocupado', $redirect ) );
+		exit;
+	}
+
+	require_once ABSPATH . 'wp-admin/includes/file.php';
+	require_once ABSPATH . 'wp-admin/includes/media.php';
+	require_once ABSPATH . 'wp-admin/includes/image.php';
+
+	set_transient( 'america_seed_lock', 1, 5 * MINUTE_IN_SECONDS );
+	$report = array(
+		'counts' => array(),
+		'errors' => array(),
+	);
+	america_seed_hero_images( $report );
+	delete_transient( 'america_seed_lock' );
+
+	set_transient( 'america_seed_report_' . get_current_user_id(), $report, HOUR_IN_SECONDS );
+	wp_safe_redirect( add_query_arg( 'america_seed', empty( $report['errors'] ) ? 'hero_ok' : 'parcial', $redirect ) );
+	exit;
+}
+add_action( 'admin_post_america_seed_hero', 'america_seeder_handle_hero' );
+
+/**
  * Executa a importação completa.
  *
  * @return array{counts:array,errors:array}
@@ -173,6 +219,7 @@ function america_seed_run() {
 		'errors' => array(),
 	);
 
+	america_seed_hero_images( $r );
 	america_seed_setores( $r );
 	america_seed_solucoes( $r );
 	america_seed_clientes( $r );
@@ -374,6 +421,32 @@ function america_seed_term( array &$r, $label, $name, $taxonomy ) {
 /* =========================================================
    Conteúdos
    ========================================================= */
+
+/**
+ * Imagens dos dois modelos do hero (Cidade e Sócio) na Biblioteca de mídia.
+ * Só importa: o Personalizar continua usando as imagens do tema até alguém escolher outra.
+ *
+ * @param array $r Relatório.
+ */
+function america_seed_hero_images( array &$r ) {
+	foreach ( america_default_hero_images() as $d ) {
+		america_seed_image( $r, $d['file'], $d['alt'], '', $d['title'] );
+	}
+}
+
+/**
+ * Alguma imagem do hero ainda não está na Biblioteca de mídia?
+ *
+ * @return bool
+ */
+function america_seed_hero_images_missing() {
+	foreach ( america_default_hero_images() as $d ) {
+		if ( ! america_seed_find( 'attachment', $d['file'] ) ) {
+			return true;
+		}
+	}
+	return false;
+}
 
 /**
  * Setores com ordem.

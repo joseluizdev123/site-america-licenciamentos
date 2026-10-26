@@ -16,10 +16,89 @@
     });
   }
 
+  /* Heros alternando ("Cidade" e "Sócio") — provisório até o cliente escolher.
+     Só roda com html.hero-rotate (posto no <head>: modo "alternar" e sem "reduzir movimento"). */
+  var mqReduce = matchMedia('(prefers-reduced-motion: reduce)');
+  var heroSlider = document.querySelector('[data-hero-slider]');
+  if (heroSlider && document.documentElement.classList.contains('hero-rotate') && !mqReduce.matches) {
+    var hSlides = heroSlider.querySelectorAll('[data-hero-slide]');
+    var hDotsWrap = heroSlider.querySelector('[data-hero-dots]');
+    var hCur = 0, hTimer = null, hStopped = false, hOver = false, hFocus = false, hVisible = true;
+    var HERO_MS = 7000;
+    var hDots = [];
+    hSlides.forEach(function (s, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('data-hero-dot', '');
+      b.setAttribute('aria-label', 'Mostrar apresentação ' + (i + 1));
+      b.addEventListener('click', function () { hShow(i); hStop(true); });
+      hDotsWrap.appendChild(b);
+      hDots.push(b);
+    });
+    // Pausar/retomar (WCAG 2.2.2): aria-pressed="true" = pausado
+    var hToggle = document.createElement('button');
+    hToggle.type = 'button';
+    hToggle.className = 'hero-slider__toggle';
+    hToggle.innerHTML = '<svg class="i-pause" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1h2v8H2zM6 1h2v8H6z" fill="currentColor"/></svg>' +
+      '<svg class="i-play" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1l7 4-7 4z" fill="currentColor"/></svg>';
+    hDotsWrap.appendChild(hToggle);
+    var hShow = function (i) {
+      hCur = i;
+      hSlides.forEach(function (s, j) {
+        var on = j === i;
+        s.classList.toggle('is-current', on);
+        if (on) { s.removeAttribute('aria-hidden'); s.inert = false; } else { s.setAttribute('aria-hidden', 'true'); s.inert = true; }
+        if (on && s.classList.contains('hero--socio')) {
+          s.classList.remove('is-entering'); void s.offsetWidth; s.classList.add('is-entering');
+        }
+      });
+      hDots.forEach(function (d, j) { d.setAttribute('aria-current', String(j === i)); });
+    };
+    var hSchedule = function () {
+      clearTimeout(hTimer);
+      if (hStopped || hOver || hFocus || !hVisible || document.hidden || mqReduce.matches) return;
+      hTimer = setTimeout(function () {
+        // Nunca deixar inert o slide que tem o foco (WCAG 2.4.3/2.4.7): adia a troca
+        if (!hSlides[hCur].contains(document.activeElement)) hShow((hCur + 1) % hSlides.length);
+        hSchedule();
+      }, HERO_MS);
+    };
+    var hStop = function (on) {
+      hStopped = on;
+      hToggle.setAttribute('aria-pressed', String(on));
+      hToggle.setAttribute('aria-label', on ? 'Retomar troca automática' : 'Pausar troca automática');
+      hSchedule();
+    };
+    hToggle.addEventListener('click', function () { hStop(!hStopped); });
+    // Mouse e foco pausam separadamente: sair com o mouse não retoma com o foco ainda dentro
+    heroSlider.addEventListener('mouseenter', function () { hOver = true; hSchedule(); });
+    heroSlider.addEventListener('mouseleave', function () { hOver = false; hSchedule(); });
+    heroSlider.addEventListener('focusin', function () { hFocus = true; hSchedule(); });
+    heroSlider.addEventListener('focusout', function (e) {
+      if (e.relatedTarget && heroSlider.contains(e.relatedTarget)) return;
+      hFocus = false; hSchedule();
+    });
+    document.addEventListener('visibilitychange', hSchedule);
+    // "Reduzir movimento" ligado no meio da sessão: para de trocar (fica no slide atual)
+    var hOnReduce = function (e) { if (e.matches) hStop(true); };
+    if (mqReduce.addEventListener) mqReduce.addEventListener('change', hOnReduce);
+    else if (mqReduce.addListener) mqReduce.addListener(hOnReduce);
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (en) { hVisible = en[0].isIntersecting; hSchedule(); }).observe(heroSlider);
+    }
+    heroSlider.classList.add('is-slider');
+    hShow(0);
+    hStop(false);
+  }
+
   /* Documentos: abas em acordeão + troca da ilustração */
+  // Corpo recolhido de acordeão não recebe foco (os links "Ver …" eram paradas de Tab invisíveis)
+  function setInert(el, on) { if (el) el.inert = on; }
+
   var docList = document.querySelector('[data-docs]');
   var docArt = document.querySelector('[data-docs-art]');
   if (docList) {
+    docList.querySelectorAll('.doc').forEach(function (d) { setInert(d.querySelector('.doc__body'), !d.classList.contains('is-active')); });
     docList.addEventListener('click', function (e) {
       var head = e.target.closest('.doc__head');
       if (!head) return;
@@ -29,6 +108,7 @@
         var on = d === item;
         d.classList.toggle('is-active', on);
         d.querySelector('.doc__head').setAttribute('aria-expanded', String(on));
+        setInert(d.querySelector('.doc__body'), !on);
       });
       if (docArt) {
         docArt.querySelectorAll('img').forEach(function (img) {
@@ -41,6 +121,7 @@
   /* FAQ: acordeão (um aberto por vez) */
   var faq = document.querySelector('[data-faq]');
   if (faq) {
+    faq.querySelectorAll('.faq-item').forEach(function (i) { setInert(i.querySelector('.faq-item__a'), !i.classList.contains('is-open')); });
     faq.addEventListener('click', function (e) {
       var q = e.target.closest('.faq-item__q');
       if (!q) return;
@@ -49,21 +130,32 @@
       faq.querySelectorAll('.faq-item').forEach(function (i) {
         i.classList.remove('is-open');
         i.querySelector('.faq-item__q').setAttribute('aria-expanded', 'false');
+        setInert(i.querySelector('.faq-item__a'), true);
       });
-      if (willOpen) { item.classList.add('is-open'); q.setAttribute('aria-expanded', 'true'); }
+      if (willOpen) { item.classList.add('is-open'); q.setAttribute('aria-expanded', 'true'); setInert(item.querySelector('.faq-item__a'), false); }
     });
   }
 
   /* Quem faz: troca suave das fotos da equipe */
+  // Só troca com a seção na tela e a aba visível (nada de trabalho fora da vista)
   document.querySelectorAll('[data-fade]').forEach(function (box) {
     var imgs = box.querySelectorAll('img');
-    if (imgs.length < 2 || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    var i = 0;
-    setInterval(function () {
+    if (imgs.length < 2 || mqReduce.matches) return;
+    var i = 0, timer = null, inView = !('IntersectionObserver' in window);
+    var tick = function () {
+      if (mqReduce.matches) return;
       imgs[i].classList.remove('is-active');
       i = (i + 1) % imgs.length;
       imgs[i].classList.add('is-active');
-    }, 5000);
+    };
+    var sync = function () {
+      var run = inView && !document.hidden;
+      if (run && !timer) timer = setInterval(tick, 5000);
+      else if (!run && timer) { clearInterval(timer); timer = null; }
+    };
+    if (!inView) new IntersectionObserver(function (en) { inView = en[0].isIntersecting; sync(); }).observe(box);
+    document.addEventListener('visibilitychange', sync);
+    sync();
   });
 
   /* Sliders (depoimentos = fade; blog = trilho horizontal) */
@@ -124,12 +216,23 @@
     };
     var pages = function () { return Math.max(1, posts.length - visible() + 1); };
     var goB = function (i) {
-      var p = pages();
+      var p = pages(), vis = visible();
       pos = (i + p) % p;
       var step = posts[0].getBoundingClientRect().width + 24;
       bTrack.style.transform = 'translateX(' + (-pos * step) + 'px)';
       dotsB.forEach(function (d, j) { d.setAttribute('aria-current', String(j === pos)); });
+      // Só os posts da página visível recebem foco/leitor de tela (cópias e posts fora da
+      // janela ficam inert): o Tab nunca cai em conteúdo escondido nem rola o viewport.
+      posts.forEach(function (post, j) {
+        var on = j >= pos && j < pos + vis;
+        if (on) { post.removeAttribute('inert'); post.removeAttribute('aria-hidden'); }
+        else { post.setAttribute('inert', ''); post.setAttribute('aria-hidden', 'true'); }
+      });
     };
+    // O viewport é overflow:hidden; se algo o rolar (foco, busca na página), volta ao 0
+    // para o transform e os pontos continuarem valendo.
+    var bView = bTrack.parentElement;
+    bView.addEventListener('scroll', function () { if (bView.scrollLeft) bView.scrollLeft = 0; }, { passive: true });
     var rebuild = function () { dotsB = buildDots(b.querySelector('[data-dots]'), pages(), goB); goB(Math.min(pos, pages() - 1)); };
     b.querySelector('[data-prev]').addEventListener('click', function () { goB(pos - 1); });
     b.querySelector('[data-next]').addEventListener('click', function () { goB(pos + 1); });

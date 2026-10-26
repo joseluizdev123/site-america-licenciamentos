@@ -79,6 +79,21 @@ function america_enqueue_assets() {
 			'strategy'  => 'defer',
 		)
 	);
+
+	// Animações da home (ver ANIMACOES.md): SEMPRE depois do main.js, também com defer.
+	// O gate que libera as animações é impresso no <head> pelo header.php, só na página inicial.
+	if ( is_front_page() ) {
+		wp_enqueue_script(
+			'america-animations',
+			get_theme_file_uri( 'assets/js/animations.js' ),
+			array( 'america-main' ),
+			america_asset_version( 'assets/js/animations.js' ),
+			array(
+				'in_footer' => true,
+				'strategy'  => 'defer',
+			)
+		);
+	}
 }
 add_action( 'wp_enqueue_scripts', 'america_enqueue_assets' );
 

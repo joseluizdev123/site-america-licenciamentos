@@ -119,6 +119,17 @@ function america_mod_image( $key ) {
 	);
 }
 
+/**
+ * Modelo do hero escolhido no Personalizar: alternar | cidade | socio.
+ * O parâmetro ?hero= da URL é aplicado no navegador (script no <head>), para apresentações.
+ *
+ * @return string
+ */
+function america_hero_mode() {
+	$mode = america_mod( 'hero_mode' );
+	return array_key_exists( $mode, america_hero_modes() ) ? $mode : 'alternar';
+}
+
 /* =========================================================
    Links, telefone, datas, imagens
    ========================================================= */

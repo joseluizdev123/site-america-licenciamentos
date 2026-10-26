@@ -22,7 +22,7 @@ function america_customizer_sections() {
 		'identidade'  => array( __( 'Identidade e SEO', 'america' ), __( 'Logos do site e o título/descrição que aparecem no Google.', 'america' ) ),
 		'contato'     => array( __( 'Contato e redes sociais', 'america' ), __( 'Usados no topo e no rodapé.', 'america' ) ),
 		'topo'        => array( __( 'Topo do site', 'america' ), __( 'Os links do menu ficam em Aparência → Menus.', 'america' ) ),
-		'hero'        => array( __( '1. Destaque principal', 'america' ), '' ),
+		'hero'        => array( __( '1. Destaque principal', 'america' ), __( 'Existem dois modelos de destaque: “Cidade” (foto de São Paulo ao fundo) e “Sócio” (foto do sócio-diretor ao lado). Escolha em “Modelo do hero” qual aparece no site. Para apresentar um modelo sem mudar o site, use o endereço da página com ?hero=cidade ou ?hero=socio no final.', 'america' ) ),
 		'trust'       => array( __( '2. Empresas que confiam', 'america' ), __( 'Os logos são cadastrados em Clientes (marque “Exibir na faixa Empresas que confiam”).', 'america' ) ),
 		'decisao'     => array( __( '3. Decisão empresarial', 'america' ), '' ),
 		'imovel'      => array( __( '4. Imóvel, atividade e operação', 'america' ), '' ),
@@ -41,10 +41,11 @@ function america_customizer_sections() {
 
 /**
  * Registro de todos os campos.
- * Tipos: text, textarea, url (aceita âncoras como #contato), image (ID de mídia).
+ * Tipos: text, textarea, url (aceita âncoras como #contato), image (ID de mídia), select (lista de opções).
  * Para "image", 'default' é o arquivo em assets/images/ e 'alt' o texto alternativo padrão.
+ * Para "select", o 6º item é a lista valor => rótulo.
  *
- * @return array chave => [section, type, label, default, alt?]
+ * @return array chave => [section, type, label, default, alt?, choices?]
  */
 function america_customizer_fields() {
 	static $fields = null;
@@ -74,14 +75,31 @@ function america_customizer_fields() {
 		'header_cta_url'       => array( 'topo', 'url', __( 'Botão do topo: link', 'america' ), '#diagnostico' ),
 
 		// 1. Hero.
-		'hero_eyebrow'         => array( 'hero', 'text', __( 'Frase acima do título', 'america' ), 'Segurança Regulatória Empresarial em São Paulo' ),
-		'hero_title'           => array( 'hero', 'textarea', __( 'Título', 'america' ), 'Alvará de funcionamento, AVCB e habite-se em São Paulo' ),
-		'hero_desc'            => array( 'hero', 'textarea', __( 'Descrição', 'america' ), 'Segurança regulatória para empresas e imóveis. A América conecta imóvel, atividade e operação para orientar decisões que envolvem capital, patrimônio, continuidade e expansão. Da análise de viabilidade à condução técnica do licenciamento e da regularização.' ),
-		'hero_image'           => array( 'hero', 'image', __( 'Imagem de fundo', 'america' ), 'hero-sao-paulo.jpg', '' ),
-		'hero_cta1_text'       => array( 'hero', 'text', __( 'Botão 1: texto', 'america' ), 'Solicitar diagnóstico' ),
-		'hero_cta1_url'        => array( 'hero', 'url', __( 'Botão 1: link', 'america' ), '#contato' ),
-		'hero_cta2_text'       => array( 'hero', 'text', __( 'Botão 2: texto', 'america' ), 'Documentos que emitimos' ),
-		'hero_cta2_url'        => array( 'hero', 'url', __( 'Botão 2: link', 'america' ), '#solucoes' ),
+		'hero_mode'            => array( 'hero', 'select', __( 'Modelo do hero', 'america' ), 'alternar', '', america_hero_modes() ),
+
+		// 1. Hero, modelo "Cidade".
+		'hero_eyebrow'         => array( 'hero', 'text', __( 'Modelo Cidade: frase acima do título', 'america' ), 'Segurança Regulatória Empresarial em São Paulo' ),
+		'hero_title'           => array( 'hero', 'textarea', __( 'Modelo Cidade: título', 'america' ), 'Alvará de funcionamento, AVCB e habite-se em São Paulo' ),
+		'hero_desc'            => array( 'hero', 'textarea', __( 'Modelo Cidade: descrição', 'america' ), 'Segurança regulatória para empresas e imóveis. A América conecta imóvel, atividade e operação para orientar decisões que envolvem capital, patrimônio, continuidade e expansão. Da análise de viabilidade à condução técnica do licenciamento e da regularização.' ),
+		'hero_image'           => array( 'hero', 'image', __( 'Modelo Cidade: imagem de fundo', 'america' ), 'hero-sao-paulo.jpg', '' ),
+		'hero_cta1_text'       => array( 'hero', 'text', __( 'Modelo Cidade: botão 1 (texto)', 'america' ), 'Solicitar diagnóstico' ),
+		'hero_cta1_url'        => array( 'hero', 'url', __( 'Modelo Cidade: botão 1 (link)', 'america' ), '#contato' ),
+		'hero_cta2_text'       => array( 'hero', 'text', __( 'Modelo Cidade: botão 2 (texto)', 'america' ), 'Documentos que emitimos' ),
+		'hero_cta2_url'        => array( 'hero', 'url', __( 'Modelo Cidade: botão 2 (link)', 'america' ), '#solucoes' ),
+
+		// 1. Hero, modelo "Sócio".
+		'hero_socio_eyebrow'      => array( 'hero', 'text', __( 'Modelo Sócio: frase acima do título', 'america' ), 'Segurança Regulatória Empresarial em São Paulo' ),
+		'hero_socio_title'        => array( 'hero', 'textarea', __( 'Modelo Sócio: título', 'america' ), 'Alvará de funcionamento, AVCB e habite-se em São Paulo' ),
+		'hero_socio_desc'         => array( 'hero', 'textarea', __( 'Modelo Sócio: descrição', 'america' ), 'Segurança regulatória para empresas e imóveis. A América conecta imóvel, atividade e operação para orientar decisões que envolvem capital, patrimônio, continuidade e expansão. Da análise de viabilidade à condução técnica do licenciamento e da regularização.' ),
+		'hero_socio_cta1_text'    => array( 'hero', 'text', __( 'Modelo Sócio: botão 1 (texto)', 'america' ), 'Solicitar análise gratuita' ),
+		'hero_socio_cta1_url'     => array( 'hero', 'url', __( 'Modelo Sócio: botão 1 (link)', 'america' ), '#contato' ),
+		'hero_socio_cta2_text'    => array( 'hero', 'text', __( 'Modelo Sócio: botão 2 (texto)', 'america' ), 'Documentos que emitimos' ),
+		'hero_socio_cta2_url'     => array( 'hero', 'url', __( 'Modelo Sócio: botão 2 (link)', 'america' ), '#solucoes' ),
+		'hero_socio_photo'        => array( 'hero', 'image', __( 'Modelo Sócio: foto (497 × 605, fundo transparente)', 'america' ), 'hero-socio.webp', 'Ricardo Nascimento, sócio-diretor da América Licenciamentos' ),
+		'hero_socio_card1_title'  => array( 'hero', 'text', __( 'Modelo Sócio: cartão de cima (destaque)', 'america' ), 'Protocolo validado' ),
+		'hero_socio_card1_text'   => array( 'hero', 'text', __( 'Modelo Sócio: cartão de cima (texto menor)', 'america' ), 'Em 24/09/2026 às 10:40' ),
+		'hero_socio_card2_title'  => array( 'hero', 'text', __( 'Modelo Sócio: cartão de baixo (destaque)', 'america' ), '+20 anos' ),
+		'hero_socio_card2_text'   => array( 'hero', 'text', __( 'Modelo Sócio: cartão de baixo (texto menor)', 'america' ), 'de licenciamento' ),
 
 		// 2. Empresas que confiam.
 		'trust_title'          => array( 'trust', 'text', __( 'Título', 'america' ), 'Empresas que confiam em nós' ),
@@ -206,6 +224,7 @@ function america_customizer_fields() {
 			'label'   => $f[2],
 			'default' => $f[3],
 			'alt'     => isset( $f[4] ) ? $f[4] : '',
+			'choices' => isset( $f[5] ) ? $f[5] : array(),
 		);
 	}
 	return $fields;
@@ -225,9 +244,26 @@ function america_customizer_sanitizer( $type ) {
 			return 'esc_url_raw';
 		case 'image':
 			return 'absint';
+		case 'select':
+			return 'america_sanitize_choice';
 		default:
 			return 'sanitize_text_field';
 	}
+}
+
+/**
+ * Sanitiza um campo "select": só aceita uma das opções cadastradas; senão volta ao padrão.
+ *
+ * @param string               $value   Valor enviado.
+ * @param WP_Customize_Setting $setting Setting (id "amr_chave").
+ * @return string
+ */
+function america_sanitize_choice( $value, $setting ) {
+	$fields  = america_customizer_fields();
+	$key     = preg_replace( '/^amr_/', '', $setting->id );
+	$choices = isset( $fields[ $key ] ) ? $fields[ $key ]['choices'] : array();
+	$value   = sanitize_key( $value );
+	return array_key_exists( $value, $choices ) ? $value : $setting->default;
 }
 
 /**
@@ -283,6 +319,20 @@ function america_customize_register( $wp_customize ) {
 						'section'     => 'america_' . $field['section'],
 						'mime_type'   => 'image',
 					)
+				)
+			);
+			continue;
+		}
+
+		if ( 'select' === $field['type'] ) {
+			$wp_customize->add_control(
+				$id,
+				array(
+					'label'       => $field['label'],
+					'description' => 'hero_mode' === $key ? __( 'Enquanto o cliente não escolhe, “Alternar” mostra os dois modelos em sequência. Escolhendo “Cidade” ou “Sócio”, só esse modelo aparece no site.', 'america' ) : '',
+					'section'     => 'america_' . $field['section'],
+					'type'        => 'radio',
+					'choices'     => $field['choices'],
 				)
 			);
 			continue;

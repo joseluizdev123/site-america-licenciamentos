@@ -33,6 +33,44 @@ function america_doc_icons() {
 }
 
 /**
+ * Modelos do destaque principal (hero). O valor vai para html[data-hero];
+ * o CSS estático esconde o modelo que não está em uso.
+ * "alternar" é o padrão provisório até o cliente escolher um dos dois.
+ *
+ * @return array valor => rótulo no Personalizar.
+ */
+function america_hero_modes() {
+	return array(
+		'alternar' => __( 'Alternar entre os dois (Cidade e Sócio)', 'america' ),
+		'cidade'   => __( 'Cidade (foto de São Paulo ao fundo)', 'america' ),
+		'socio'    => __( 'Sócio (foto do sócio-diretor ao lado)', 'america' ),
+	);
+}
+
+/**
+ * Imagens das duas versões do hero levadas para a Biblioteca de mídia pelo importador
+ * (ficam disponíveis para escolher no Personalizar → 1. Destaque principal).
+ * SVGs ficam de fora: o WordPress bloqueia o envio de SVG por padrão. Os ícones dos cartões
+ * do Sócio também: nenhum campo do Personalizar os usa (vêm direto do tema).
+ *
+ * @return array [file, alt, title]
+ */
+function america_default_hero_images() {
+	return array(
+		array(
+			'file'  => 'hero-sao-paulo.jpg',
+			'alt'   => '',
+			'title' => 'Hero Cidade: São Paulo',
+		),
+		array(
+			'file'  => 'hero-socio.webp',
+			'alt'   => 'Ricardo Nascimento, sócio-diretor da América Licenciamentos',
+			'title' => 'Hero Sócio: Ricardo Nascimento',
+		),
+	);
+}
+
+/**
  * Soluções / documentos (aba "Segurança regulatória").
  *
  * @return array

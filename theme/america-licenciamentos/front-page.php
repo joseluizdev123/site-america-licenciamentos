@@ -11,7 +11,7 @@ defined( 'ABSPATH' ) || exit;
 get_header();
 
 $america_sections = array(
-	'hero',         // 2. Hero · 7065:3613
+	'hero',         // 2. Heros "Cidade" 7065:3613 e "Sócio" 7022:1370 (slider; modelo no Personalizar)
 	'trust',        // 3. Empresas que confiam · 7065:3636
 	'decision',     // 4. Decisão empresarial · 7053:588
 	'property',     // 5. Imóvel, atividade e operação · 7053:521
