@@ -23,7 +23,7 @@
   if (heroSlider && document.documentElement.classList.contains('hero-rotate') && !mqReduce.matches) {
     var hSlides = heroSlider.querySelectorAll('[data-hero-slide]');
     var hDotsWrap = heroSlider.querySelector('[data-hero-dots]');
-    var hCur = 0, hTimer = null, hStopped = false, hHover = false, hVisible = true;
+    var hCur = 0, hTimer = null, hStopped = false, hOver = false, hFocus = false, hVisible = true;
     var HERO_MS = 7000;
     var hDots = [];
     hSlides.forEach(function (s, i) {
@@ -56,8 +56,12 @@
     };
     var hSchedule = function () {
       clearTimeout(hTimer);
-      if (hStopped || hHover || !hVisible || document.hidden || mqReduce.matches) return;
-      hTimer = setTimeout(function () { hShow((hCur + 1) % hSlides.length); hSchedule(); }, HERO_MS);
+      if (hStopped || hOver || hFocus || !hVisible || document.hidden || mqReduce.matches) return;
+      hTimer = setTimeout(function () {
+        // Nunca deixar inert o slide que tem o foco (WCAG 2.4.3/2.4.7): adia a troca
+        if (!hSlides[hCur].contains(document.activeElement)) hShow((hCur + 1) % hSlides.length);
+        hSchedule();
+      }, HERO_MS);
     };
     var hStop = function (on) {
       hStopped = on;
@@ -66,10 +70,14 @@
       hSchedule();
     };
     hToggle.addEventListener('click', function () { hStop(!hStopped); });
-    heroSlider.addEventListener('mouseenter', function () { hHover = true; hSchedule(); });
-    heroSlider.addEventListener('mouseleave', function () { hHover = false; hSchedule(); });
-    heroSlider.addEventListener('focusin', function () { hHover = true; hSchedule(); });
-    heroSlider.addEventListener('focusout', function () { hHover = false; hSchedule(); });
+    // Mouse e foco pausam separadamente: sair com o mouse não retoma com o foco ainda dentro
+    heroSlider.addEventListener('mouseenter', function () { hOver = true; hSchedule(); });
+    heroSlider.addEventListener('mouseleave', function () { hOver = false; hSchedule(); });
+    heroSlider.addEventListener('focusin', function () { hFocus = true; hSchedule(); });
+    heroSlider.addEventListener('focusout', function (e) {
+      if (e.relatedTarget && heroSlider.contains(e.relatedTarget)) return;
+      hFocus = false; hSchedule();
+    });
     document.addEventListener('visibilitychange', hSchedule);
     // "Reduzir movimento" ligado no meio da sessão: para de trocar (fica no slide atual)
     var hOnReduce = function (e) { if (e.matches) hStop(true); };
@@ -208,12 +216,23 @@
     };
     var pages = function () { return Math.max(1, posts.length - visible() + 1); };
     var goB = function (i) {
-      var p = pages();
+      var p = pages(), vis = visible();
       pos = (i + p) % p;
       var step = posts[0].getBoundingClientRect().width + 24;
       bTrack.style.transform = 'translateX(' + (-pos * step) + 'px)';
       dotsB.forEach(function (d, j) { d.setAttribute('aria-current', String(j === pos)); });
+      // Só os posts da página visível recebem foco/leitor de tela (cópias e posts fora da
+      // janela ficam inert): o Tab nunca cai em conteúdo escondido nem rola o viewport.
+      posts.forEach(function (post, j) {
+        var on = j >= pos && j < pos + vis;
+        if (on) { post.removeAttribute('inert'); post.removeAttribute('aria-hidden'); }
+        else { post.setAttribute('inert', ''); post.setAttribute('aria-hidden', 'true'); }
+      });
     };
+    // O viewport é overflow:hidden; se algo o rolar (foco, busca na página), volta ao 0
+    // para o transform e os pontos continuarem valendo.
+    var bView = bTrack.parentElement;
+    bView.addEventListener('scroll', function () { if (bView.scrollLeft) bView.scrollLeft = 0; }, { passive: true });
     var rebuild = function () { dotsB = buildDots(b.querySelector('[data-dots]'), pages(), goB); goB(Math.min(pos, pages() - 1)); };
     b.querySelector('[data-prev]').addEventListener('click', function () { goB(pos - 1); });
     b.querySelector('[data-next]').addEventListener('click', function () { goB(pos + 1); });

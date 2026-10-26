@@ -36,7 +36,7 @@ Usamos só seis tipos de movimento, cada um com um propósito:
 | Restrição | Mecanismo |
 |---|---|
 | 1. Estado final = Figma | Usamos a Web Animations API sempre com `fill: 'backwards'`, nunca `forwards` ou `both`. Quando a animação termina, o efeito é descartado e quem manda volta a ser a folha de estilo validada. Animamos só `opacity`, `translate`, `scale` e `clip-path`, e `stroke-dashoffset`/`fill-opacity` em cópias SVG temporárias. Toda alteração de DOM é revertida (seção 7.8). |
-| 2. Sem JS / falha segura | Nada fica escondido em CSS puro. Os estados iniciais só existem sob `html.js-anim`, uma classe posta por script inline no `<head>` antes do primeiro paint, e só em elementos marcados pelo próprio JS. Há watchdog de 3 s, failsafe CSS de 1,5 s no hero e `try/catch` (seção 6). |
+| 2. Sem JS / falha segura | Nada fica escondido em CSS puro. Os estados iniciais só existem sob `html.js-anim`, uma classe posta por script inline no `<head>` antes do primeiro paint, e só em elementos marcados pelo próprio JS. O hero só é pré-escondido com `html.hero-anim` (desktop não-lite), que o gate tira aos 1400 ms da navegação se o motor não subir; há watchdog de 3 s, failsafe CSS de 1,5 s e `try/catch` (seção 6). |
 | 3. `prefers-reduced-motion: reduce` | O gate não liga nada: o conteúdo aparece imediatamente, sem fades. Também cobre a troca da preferência no meio da sessão (seção 10). |
 | 4. Performance | Nenhuma biblioteca. IntersectionObserver, nenhum listener de scroll, um único listener de `resize` passivo. Sem `will-change` e CLS 0. JS próprio de ≈ 10–12 KB não minificado (≈ 4 KB gzip). |
 | 5. 1440 → 375 px; toque | Distâncias × 0,75 em ≤ 720 px. Só `translateY` nas revelações, então nunca há scroll horizontal. Hover só em `(hover:hover) and (pointer:fine)`, e nada depende de hover (seção 11). |
@@ -179,7 +179,7 @@ Proibido: *back*, *elastic*, *bounce*, qualquer *overshoot*.
 
 | Gatilho | Configuração |
 |---|---|
-| **IN** (observador principal) | `IntersectionObserver`, `rootMargin: '0px 0px -12% 0px'`, `threshold: 0`. Dispara quando o topo do alvo cruza 88% da altura da tela. Depois o alvo é `unobserve`. Listas escalonadas (LOTE/diagonal) têm **um único alvo observado por trecho**: o 1º item pendente; um novo trecho começa a cada meia tela de altura. Quando ele cruza, o trecho inteiro dispara. |
+| **IN** (observador principal) | `IntersectionObserver`, `rootMargin: '0px 0px -12% 0px'`, `threshold: 0`. Dispara quando o topo do alvo cruza 88% da altura da tela. Depois o alvo é `unobserve`. **Todo alvo marcado é observado** (≈140 alvos, custo desprezível): um salto instantâneo de rolagem (arrastar a barra, `scrollTo`, autoscroll, fragmento de texto) nunca deixa item sem gatilho. Listas escalonadas (LOTE/diagonal) formam **trechos** de meia tela: quando qualquer item de um trecho dispara, os colegas pendentes entram no mesmo lote (o escalonamento vem do lote). Alvos `wipe-y` (as estatísticas) começam com `clip-path` de altura 0, e o IO usa a caixa recortada; por isso o observado é o **pai** (`ul.stats`), que dispara o grupo. |
 | **Foco** | `focusin` (captura) no documento: se o alvo do foco está dentro de um registro ainda pendente, ele **assenta na hora** (sem animação). Rede de segurança CSS: `html.js-anim [data-anim]:focus-within { opacity:1 !important; clip-path:none !important }`. Nenhum controle focado fica invisível (WCAG 2.4.7). |
 | **IN-F** (observador do footer) | Igual, com `rootMargin: '0px'`. |
 | **Pré-carga** | `rootMargin: '800px 0px'`, só para buscar os SVGs das ilustrações antes da hora. |
@@ -192,11 +192,11 @@ Proibido: *back*, *elastic*, *bounce*, qualquer *overshoot*.
 
 Camadas, na ordem em que agem:
 
-1. **Gate inline** (§4.1). Sem `?static`, com `no-preference` → `motion-ok`. Com IntersectionObserver, WAAPI e `translate` suportados → também `js-anim` e um watchdog de 3 s, que remove `js-anim` se `anim-ready` não aparecer.
+1. **Gate inline** (§4.1). Sem `?static`, com `no-preference` → `motion-ok`. Com IntersectionObserver, WAAPI e `translate` suportados → também `js-anim` e um watchdog de 3 s, que remove `js-anim` se `anim-ready` não aparecer. Só em aparelho **não-lite** (`min-width: 961px`, `hardwareConcurrency > 4`, sem `saveData`, os mesmos testes do lite do `animations.js`) → também `hero-anim`, com um timer **medido do início da navegação** (`1400 − performance.now()`) que tira `hero-anim` se `anim-ready` ainda não existir. No celular/lite o hero nunca é escondido (aparece no primeiro paint, sem entrada).
 2. **Estados iniciais em CSS** (§12), todos dentro de `@media (prefers-reduced-motion: no-preference)` e sob `html.js-anim`:
-   - **Hero** (acima da dobra, escondido desde o primeiro paint). Lista fixa: `.hero__eyebrow`, `.hero .t-display`, `.hero__desc`, `.hero__actions .btn`, com `opacity: 0` enquanto não têm `.is-in`.
+   - **Hero** (acima da dobra, escondido desde o primeiro paint, só sob `html.js-anim.hero-anim`). Lista fixa: `.hero__eyebrow`, `.hero .t-display`, `.hero__desc`, `.hero__actions .btn`, com `opacity: 0` enquanto não têm `.is-in`.
    - **Todo o resto** só é escondido se o JS tiver posto `data-anim` no elemento. Sem JS, nenhum elemento tem `data-anim` e nada se esconde.
-3. **Failsafe CSS do hero:** se `anim-ready` não existir em 1,5 s, `@keyframes a-failsafe` força `opacity: 1` nos 4 alvos do hero.
+3. **Failsafe do hero:** o principal é o timer de 1400 ms do gate (item 1). Rede extra em CSS: se `anim-ready` não existir em 1,5 s (contados da resolução de estilo), `@keyframes a-failsafe` força `opacity: 1` nos 4 alvos do hero.
 4. **Boot do `anim.js`** (§7.3), numa única tarefa síncrona, sem frame renderizado no meio:
    - marca **somente** os alvos que estão inteiramente **abaixo** da dobra e visíveis (`getClientRects().length > 0`);
    - o que já está na tela ou acima dela no boot (reload no meio da página, `#âncora`, bfcache, telas altas) **fica estático e nunca é escondido**;
@@ -204,12 +204,18 @@ Camadas, na ordem em que agem:
    - `anim-ready` é adicionado **por último**.
 5. **Boot tardio:**
    - se o `anim.js` subir com `performance.now() > 1000`, o hero não espera a fonte (T0 = agora);
-   - se `> 1400`, o hero é finalizado estático (`.is-in` sem animação). Isso fica antes do failsafe de 1,5 s, então nunca há flash;
+   - se `> 1400`, ou se `hero-anim` não existe (lite, ou o timer do gate já venceu), o hero é finalizado estático (`.is-in` sem animação). O corte do motor e o timer do gate usam o mesmo relógio (`performance.now()`), então nunca há flash;
    - se `js-anim` já foi removido pelo watchdog, o `anim.js` não religa as revelações (só as microinterações).
-6. **Recuperação (catch-up):** a cada callback dos observadores, lemos (só leitura) o retângulo dos alvos pendentes. Os que têm `bottom < 0`, ou seja, foram pulados por âncora ou rolagem rápida, são **assentados na hora, sem animação**. Conteúdo acima do leitor nunca fica escondido.
+6. **Recuperação (catch-up):** a cada callback dos observadores, lemos (só leitura) o retângulo dos alvos pendentes. Os que têm `bottom < 0`, ou seja, foram pulados por âncora ou rolagem rápida, são **assentados na hora, sem animação**. Os que estão na faixa IN (`bottom > 0` e `top < 0,88 × altura`) **entram no lote e animam**, mesmo que o observador deles não tenha visto a interseção. Conteúdo acima do leitor nunca fica escondido.
 7. **Sentinela de fim de página:** quando `.footer__legal` intersecta (IN-F), todos os alvos pendentes da página são resolvidos. Os que estão na tela animam; os demais são assentados na hora. Não se insere elemento novo no DOM.
 8. **Impressão:** `beforeprint` executa `finishAll()`, e `@media print` força a visibilidade de tudo (§12).
-9. **Elementos com `display:none` no breakpoint** (`.cta-box__art` ≤ 960, `.sectors` ≤ 720, `.about__foot .dot-pattern` ≤ 960) nunca são marcados e nenhuma animação depende deles.
+9. **Erros depois do boot** (restrição 2: nenhum erro deixa conteúdo escondido):
+   - `anim()` nunca lança: se `el.animate` falhar, o callback roda na hora (estado final);
+   - `splitLines` em `try/catch`: qualquer falha na medição (fontes, `Range`, layout) desfaz a divisão e cai no fallback em bloco;
+   - por registro: `startRecord`, `fire`, `onIn`, o `go` do desenho, `drawSvg` (o `<img>` original volta), o contador e o `go` do hero têm `try/catch`. Um erro num registro só **assenta aquele registro** (`release`: desfaz a divisão, tira `data-anim`/`.is-in`); os demais seguem animando;
+   - último recurso (`hardStop`): erro num callback de animação, ou `error`/`unhandledrejection` cujo arquivo/pilha é `animations.js`, roda `finishAll()`, desfaz tudo e remove `js-anim`/`anim-ready`;
+   - os erros vão para `console.error('[animations]', …)` e o `?anim-audit` acusa "sem erros em tempo de execução".
+10. **Elementos com `display:none` no breakpoint** (`.cta-box__art` ≤ 960, `.sectors` ≤ 720, `.about__foot .dot-pattern` ≤ 960) nunca são marcados e nenhuma animação depende deles.
 
 ---
 
@@ -296,7 +302,7 @@ Regras:
 
 - **Nunca** escrever `el.style.*` para animar.
 - Quando uma foto escala dentro de uma moldura arredondada, a moldura recebe a classe `.a-clip` (`isolation: isolate`, que evita o Safari perder o raio) **só enquanto anima**. Use contagem de referência, porque a mesma moldura pode receber `.a-clip` da revelação e de uma microinteração.
-- Fotos com `loading="lazy"`: antes de animar, `await Promise.race([img.decode(), wait(300)])`. Para logos, espere `img.complete` ou o evento `load`, com teto de 400 ms. Enquanto espera, o alvo continua no estado inicial.
+- Fotos com `loading="lazy"`: antes de animar, espere `img.complete` ou o evento `load`, com teto de 300 ms (**nunca `img.decode()`**: decodifica no tamanho intrínseco com filtro *nearest neighbour*, e esse bitmap era reaproveitado no raster final, que deixava de bater com o estático — 80 px de diferença nos cards do Imóvel; no DPR 1 nem aquece o cache do raster). Para logos, a mesma espera, com teto de 400 ms. Enquanto espera, o alvo continua no estado inicial.
 
 ### 7.5 Revelação por linhas (divisor medido)
 
@@ -494,7 +500,7 @@ Tudo assenta em ≈ T0 + 1220 ms.
 | `.property .section-head__title > .eyebrow` | `up` 12 | IN | 600 | S | — | — |
 | `#property-title` (2 linhas, 729 / 581,8 de 760) | `lines` | IN, +80 | 950 | S | 90 | Restaurar o `style="text-align:center"` exato. |
 | `.property .feature` × 3 | `up` 24 | IN, LOTE | 800 | S | 110 | Uma linha no desktop; um a um em ≤ 960. |
-| `.feature__img > img` | `scale` 1,06 → 1 | Dep.: mesmo início do seu card | 1400 | S | (herda do card) | `.a-clip` na `.feature__img` durante a animação. Os cartões "atividade" embutidos no JPG escalam junto. `decode` com teto de 300 ms. |
+| `.feature__img > img` | `scale` 1,06 → 1 | Dep.: mesmo início do seu card | 1400 | S | (herda do card) | `.a-clip` na `.feature__img` durante a animação. Os cartões "atividade" embutidos no JPG escalam junto. Espera o `load` com teto de 300 ms (sem `decode()`). |
 | `.property .cta-box` | `up` 16 | IN | 700 | S | — | — |
 | `.property .cta-box__art` (2ª cópia de `ilustra-cta.svg`) | `draw`, ordem do documento | Dep.: caixa + 200 | 1300 | D | 66 | Sufixo de id `-a2`, próprio. |
 
@@ -530,7 +536,7 @@ Tudo assenta em ≈ T0 + 1220 ms.
 | `#about-title` (2 linhas, 538 / 517 de 572) | `lines` | IN, +80 | 950 | S | 90 | — |
 | `.about__intro-left .dot-pattern` | `wipe-x` | IN, +300 | 1000 | D | — | A opacidade .6 em repouso nunca é tocada. |
 | `.about__intro .stack-p > p` × 2 | `up` 16 (blocos) | IN, LOTE | 700 | S | 100 | — |
-| `.stats > li.stat` × 3 | `wipe-y` (a régua azul de 1 px "desce" com o conteúdo) | IN, LOTE | 800 | D | 120 | Livro-razão sendo pautado. Uma coluna em ≤ 960. |
+| `.stats > li.stat` × 3 | `wipe-y` (a régua azul de 1 px "desce" com o conteúdo) | IN, LOTE | 800 | D | 120 | Livro-razão sendo pautado. Uma coluna em ≤ 960. Observado pelo pai `ul.stats` (o `clip-path` inicial zera a caixa do `li` para o IO). |
 | `.stat:first-child > strong` ("+20 anos") | Contagem 0 → 20 | Dep.: texto vira "+0 anos" no início do wipe; conta a partir de +150 | 1400 | easeOutCubic | — | §7.7. Os outros dois `strong` ficam estáticos. |
 | `.about__slides[data-fade]` (wrapper) | `fade` | IN | 700 | F | — | O `main.js` continua dono da troca a cada 5 s. |
 | `.about__slides img.is-active` | `scale` 1,05 → 1 | Dep.: com o wrapper | 1600 | S | — | Só a foto visível escala (as outras estão com opacidade 0; promover três camadas de 1376 px não se pagava). `.a-clip` no wrapper. |
@@ -570,7 +576,7 @@ Tudo assenta em ≈ T0 + 1220 ms.
 | `.accountants__text .stack-p > p` × 3 | `up` 16 | IN, LOTE | 700 | S | 90 | — |
 | `.accountants__text > .link-caret--light` | `fade` | IN | 600 | F | — | — |
 | `.accountants__img` (wrapper) | `fade` | IN | 700 | F | — | — |
-| `.accountants__img > img` | `scale` 1,06 → 1 | Dep.: com o wrapper | 1400 | S | — | `.a-clip`; `decode` com teto de 300 ms. |
+| `.accountants__img > img` | `scale` 1,06 → 1 | Dep.: com o wrapper | 1400 | S | — | `.a-clip`; espera o `load` com teto de 300 ms (sem `decode()`). |
 | `ol.accountants__steps`: sequência única (gatilho = o `ol`) | Etapa 1 = `li:nth-child(1)` `up` 12 em **0** · Seta 1 = `li:nth-child(2) > svg` `wipe-y` em **160** · Etapa 2 = `li:nth-child(3)` em **400** · Seta 2 = `li:nth-child(4) > svg` em **560** · Etapa 3 = `li:nth-child(5)` em **800** | IN | 600 (etapas) / 600 (setas) | S (etapas) / D (setas) | Fixo | Cenário → Enquadramento → Acompanhamento. As setas são contornos **preenchidos** (`fill-opacity .15`), então usamos clip e não *dash*. O clip no **svg** segue o `rotate(-90deg)` do `li` entre 721 e 1180, então o wipe vai da esquerda para a direita, na direção da seta. O transform do `li` nunca é tocado. |
 
 ### 8.12 Conteúdos (`section.blog#conteudos`)
@@ -582,6 +588,8 @@ Tudo assenta em ≈ T0 + 1220 ms.
 | `.blog__head > .link-caret` | `fade` | IN, +200 | 600 | F | — | — |
 | `article.post` (os 7, inclusive clones) | `up` 20 nos posts **dentro** do retângulo do `.blog__viewport` (3 no desktop, 2 em ≤ 960, 1 em ≤ 720); os demais são assentados na hora | Gatilho = `.blog__viewport` (IN, sem efeito próprio) | 700 | S | 100 | Só `translate`: a largura medida pelo `main.js` não muda. **Nunca** `.blog__track` e **nunca** `.post__img img`, então sem escala de foto aqui. |
 | `.blog .slider-nav` | `fade` | IN, +300 | 600 | F | — | — |
+
+Acessibilidade do trilho (`main.js`, `goB`): só os posts da página visível ficam interativos; cópias e posts fora da janela recebem `inert` + `aria-hidden` (o Tab nunca cai em conteúdo escondido). Se algo rolar o `.blog__viewport` (`overflow:hidden`), um listener passivo de `scroll` volta `scrollLeft` a 0, mantendo `transform` e pontos em sincronia. Nada muda visualmente.
 
 ### 8.13 FAQ (`section.faq`)
 
@@ -653,6 +661,7 @@ Como a classe só aparece depois de um clique, o documento que já começa ativo
 - **`prefers-reduced-motion: reduce` no carregamento:** o gate não adiciona `motion-ok` nem `js-anim`. Não há estado inicial, o `anim.js` retorna na primeira linha, o conteúdo aparece **imediatamente e sem fades**, e não há microinterações novas.
 - **CSS:** `style.css` já tem `transition: none !important` e `scroll-behavior: auto !important` no bloco de redução. O `motion.css` acrescenta `*, *::before, *::after { animation: none !important; }`, que também desliga os `@keyframes` novos.
 - **A troca de fotos da equipe** já se desliga sozinha (checagem no `main.js`, mantida). Ela também só roda com a seção na tela e a aba visível (`IntersectionObserver` + `visibilitychange`).
+- **Heros alternando, foco:** mouse e foco pausam separadamente (`hOver`, `hFocus`); o `focusout` mantém a pausa se o foco foi para outro elemento do slider, e o timer nunca troca de slide enquanto o slide atual contém `document.activeElement`. Um slide focado nunca vira `inert`/`aria-hidden` (WCAG 2.4.3/2.4.7), mesmo com mouse saindo ou rolagem por roda.
 - **Heros alternando:** só alternam com `html.hero-rotate`, posto no `<head>` quando o modo é "alternar" e não há redução de movimento. Sem essa classe (sem JS, `reduce`, modo "cidade") o slide "Sócio" fica `display:none` → altura exata da cidade. Se `reduce` for ligado no meio da sessão, a rotação para no slide atual.
 - **Troca de preferência no meio da sessão** (listener `change` do `matchMedia`):
   - `finishAll()`, que chama `finish()` em toda animação de `running`, reverte divisões de linha, devolve os `<img>`, restaura contadores e assenta todos os pendentes;
@@ -903,7 +912,7 @@ Os SVGs das ilustrações são lidos de `img.currentSrc || img.src`, então func
 | Foco por teclado em conteúdo ainda invisível (faixa dos 12% inferiores) | `focusin` assenta o registro na hora + rede de segurança `:focus-within` no CSS. |
 | Hero alternando: sem h1 quando o "Sócio" aparece; sem pausa; pontos de 6 px | `.hero-socio__title` com `role="heading" aria-level="1"` (sempre um único h1 exposto); botão pausar/retomar no pill dos pontos (`aria-pressed`); área de toque de 24 px (`::before`, espaçamento de 24 px entre centros) sem mudar o ponto de 6 px. |
 | Acordeões "quicavam" (abre 420 / fecha 280 com curvas diferentes) | Mesma duração e curva nos dois sentidos (420 ms, S). |
-| Custo do motor na rolagem (mobile) | `catchUp` só roda com lote não vazio e lê tudo antes de escrever; um alvo observado por trecho de lista; lite com término comum nas listas; `splitLines` mede só inícios de palavra; leitura do hero na fase de leitura; Sobre escala só a foto ativa; troca de fotos da equipe pausada fora da tela/aba oculta. |
+| Custo do motor na rolagem (mobile) | `catchUp` só roda com lote não vazio e lê tudo antes de escrever; todos os alvos observados (sem custo mensurável no IO; o trecho só agrupa o lote); lite com término comum nas listas; `splitLines` mede só inícios de palavra; leitura do hero na fase de leitura; Sobre escala só a foto ativa; troca de fotos da equipe pausada fora da tela/aba oculta. |
 | Preload do hero fixo na cidade competia com o LCP do modo "Sócio" | Preload injetado pelo script de modo do `<head>`, com a imagem do hero que aparece primeiro. |
 | Cache de CSS/JS antigos em QA | `?v=` nos três assets locais do `index.html` (no tema: `filemtime()` como `ver`). |
 | Rotação do hero continuava após ligar `reduce` | Listener `change` para a rotação no slide atual. |

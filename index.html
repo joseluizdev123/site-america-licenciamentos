@@ -32,10 +32,20 @@
       if (!('IntersectionObserver' in w) || !h.animate ||
           !(w.CSS && CSS.supports && CSS.supports('translate', '0 1px'))) return;
       h.classList.add('js-anim');
+      /* Hero só é escondido onde a entrada vai rodar (mesmos testes do "lite" do animations.js) */
+      var c = navigator.connection;
+      if (w.matchMedia('(min-width: 961px)').matches && (navigator.hardwareConcurrency || 8) > 4 && !(c && c.saveData)) {
+        h.classList.add('hero-anim');
+        /* Mesmo corte do animations.js: sem boot até 1400 ms da navegação, o hero aparece estático */
+        var t0 = w.performance && performance.now ? performance.now() : 0;
+        w.setTimeout(function () {
+          if (!h.classList.contains('anim-ready')) h.classList.remove('hero-anim');
+        }, Math.max(0, 1400 - t0));
+      }
       w.setTimeout(function () {
-        if (!h.classList.contains('anim-ready')) h.classList.remove('js-anim');
+        if (!h.classList.contains('anim-ready')) h.classList.remove('js-anim', 'hero-anim');
       }, 3000);
-    } catch (e) { h.classList.remove('js-anim'); }
+    } catch (e) { h.classList.remove('js-anim', 'hero-anim'); }
   })(document, window);
   </script>
   <title>América Licenciamentos — Alvará, AVCB e habite-se em São Paulo</title>
@@ -43,7 +53,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&family=Stack+Sans+Headline:wght@300&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/css/style.css?v=3">
+  <link rel="stylesheet" href="assets/css/style.css?v=4">
 </head>
 <body>
 <!-- sprite:start -->
@@ -764,8 +774,8 @@
   </div>
 </footer>
 
-<script src="assets/js/main.js?v=3" defer></script>
-<script src="assets/js/animations.js?v=3" defer></script>   <!-- SEMPRE depois do main.js -->
+<script src="assets/js/main.js?v=5" defer></script>
+<script src="assets/js/animations.js?v=5" defer></script>   <!-- SEMPRE depois do main.js -->
 
 </body>
 </html>

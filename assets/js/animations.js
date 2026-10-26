@@ -104,7 +104,7 @@
   var onReduce = function (e) {
     if (!e.matches) return;
     finishAll();
-    html.classList.remove('js-anim', 'anim-ready', 'motion-ok');
+    html.classList.remove('js-anim', 'anim-ready', 'motion-ok', 'hero-anim');
   };
   if (mqReduce.addEventListener) mqReduce.addEventListener('change', onReduce);
   else if (mqReduce.addListener) mqReduce.addListener(onReduce);
@@ -127,16 +127,69 @@
   // Anima sem tocar em classes; cb roda ao terminar (ou na hora, se parado)
   function anim(el, frames, o, cb) {
     if (halt) { if (cb) cb(); return null; }
-    var a = el.animate(frames, {
-      duration: o.dur, delay: Math.max(0, o.delay || 0), easing: o.ease || EASE,
-      fill: 'backwards'                          // NUNCA 'forwards' ou 'both'
-    });
-    a.id = 'a-' + (o.kind || 'reveal');          // prefixo usado pela auditoria
+    var a;
+    try {
+      a = el.animate(frames, {
+        duration: o.dur, delay: Math.max(0, o.delay || 0), easing: o.ease || EASE,
+        fill: 'backwards'                        // NUNCA 'forwards' ou 'both'
+      });
+      a.id = 'a-' + (o.kind || 'reveal');        // prefixo usado pela auditoria
+    } catch (err) {                              // WAAPI falhou: estado final na hora
+      report(err);
+      if (a) { try { a.cancel(); } catch (e) {} }
+      if (cb) cb();
+      return null;
+    }
     running.add(a);
-    var done = function () { running.delete(a); if (cb) cb(); maybeCleanup(); };
+    var done = function () {
+      running.delete(a);
+      try { if (cb) cb(); } catch (err) { report(err); hardStop(); return; }
+      maybeCleanup();
+    };
     a.finished.then(done, done);
     return a;
   }
+
+  /* ---------------------------------------------------------
+     Rede de segurança (restrição 2): erro depois do boot nunca
+     deixa conteúdo escondido.
+     - guard(r): erro num registro → só ele assenta, sem animação
+     - hardStop(): último recurso → tudo assenta e sai js-anim
+     --------------------------------------------------------- */
+  var faults = 0;
+  function report(err) { faults++; if (w.console) console.error('[animations]', err); }
+
+  function release(r) {
+    var els = [r.el].concat(r.deps.map(function (x) { return x.el; }));
+    splits.forEach(function (sp) {
+      if (els.some(function (el) { return el === sp.el || el.contains(sp.el); })) {
+        try { unsplit(sp); } catch (e) { splits.delete(sp); }
+      }
+    });
+    r.done = false;
+    try { settleRecord(r); } catch (e) { hardStop(); }
+  }
+
+  function hardStop() {
+    if (cleaned) return;
+    try { finishAll(); } catch (e) { halt = true; }
+    splits.forEach(function (sp) { try { unsplit(sp); } catch (e) {} });
+    splits.clear(); running.clear(); pending.clear(); counters.clear();
+    busy = 0; heroDone = true; booted = true;
+    $$('[data-anim]').forEach(function (el) { el.removeAttribute('data-anim'); el.classList.remove('is-in'); });
+    html.classList.remove('js-anim', 'anim-ready', 'hero-anim');   // sem js-anim não existe estado escondido
+    try { maybeCleanup(); } catch (e) { cleaned = true; }
+  }
+
+  // Erro não capturado vindo deste arquivo (evento, promessa, timer) → último recurso
+  var ME = /animations\.js/;
+  w.addEventListener('error', function (ev) {
+    if (!cleaned && ev && ev.filename && ME.test(ev.filename)) { faults++; hardStop(); }
+  });
+  w.addEventListener('unhandledrejection', function (ev) {
+    var s = ev && ev.reason && ev.reason.stack;
+    if (!cleaned && s && ME.test(s)) { faults++; hardStop(); }
+  });
 
   // Revelação: tira o pré-estado do CSS na MESMA tarefa em que anima
   function play(el, frames, o) {
@@ -161,7 +214,15 @@
     if (sp.style === null) sp.el.removeAttribute('style'); else sp.el.setAttribute('style', sp.style);
   }
 
+  // Qualquer falha na medição (fontes, Range, layout) → null = revelação em bloco
   function splitLines(el) {
+    try { return splitLinesRaw(el); } catch (err) {
+      report(err);
+      splits.forEach(function (sp) { if (sp.el === el) { try { unsplit(sp); } catch (e) { splits.delete(sp); } } });
+      return null;
+    }
+  }
+  function splitLinesRaw(el) {
     if (el.childNodes.length !== 1 || el.firstChild.nodeType !== 3) return null;
     var cs = getComputedStyle(el), lh = parseFloat(cs.lineHeight);
     if (!lh || !d.fonts || !d.fonts.check(cs.fontWeight + ' ' + cs.fontSize + ' "Stack Sans Headline"')) return null;
@@ -279,19 +340,29 @@
     var go = function (text) {
       if (fired) return;
       fired = true; busy--;
-      if (halt) { settle(img); return; }
-      var rest = Math.max(0, D - (performance.now() - t0));
-      var svg = null;
-      try { svg = text ? buildSvg(text, img) : null; } catch (e) { svg = null; }
-      if (!svg) { wipeArt(img, rest, P); return; }
-      drawSvg(img, svg, rest, P);
+      try {
+        if (halt) { settle(img); return; }
+        var rest = Math.max(0, D - (performance.now() - t0));
+        var svg = null;
+        try { svg = text ? buildSvg(text, img) : null; } catch (e) { svg = null; }
+        if (!svg) { wipeArt(img, rest, P); return; }
+        drawSvg(img, svg, rest, P);
+      } catch (err) { report(err); settle(img); }
     };
     getSvg(img.currentSrc || img.src).then(go, function () { go(null); });
     setTimeout(function () { go(null); }, 300);   // SVG não chegou em 300 ms → wipe
   }
 
+  // Falha no meio do desenho → o <img> original volta, já no estado final
   function drawSvg(img, svg, D, P) {
     busy++;
+    try { drawSvgRaw(img, svg, D, P); } catch (err) {
+      report(err);
+      if (svg.parentNode) { try { svg.replaceWith(img); } catch (e) {} }
+      if (img.isConnected) { busy--; settle(img); } else hardStop();
+    }
+  }
+  function drawSvgRaw(img, svg, D, P) {
     img.replaceWith(svg);
     var paths = $$('path', svg).filter(function (p) { return !p.closest('defs') && !p.closest('clipPath'); });
     if (P.bbox) {
@@ -324,31 +395,38 @@
      Contador "+20 anos" (§7.7)
      --------------------------------------------------------- */
   function runCount(strong, D) {
+    try { runCountRaw(strong, D); } catch (err) { report(err); counters.forEach(function (end) { if (end.el === strong) end(); }); }
+  }
+  function runCountRaw(strong, D) {
     if (halt || !strong || strong.childNodes.length !== 1 || strong.firstChild.nodeType !== 3) return;
     var m = /^(\D*)(\d+)(.*)$/.exec(strong.firstChild.data);
     if (!m) return;
     var orig = strong.firstChild, tmp = d.createTextNode(m[1] + '0' + m[3]), sr = d.createElement('span');
     var aria = strong.getAttribute('aria-hidden'), target = parseInt(m[2], 10), done = false;
     sr.className = 'sr-only'; sr.textContent = orig.data;
-    busy++;
+    var end = function () {                      // tolera estado parcial (falha no meio da troca)
+      if (done) return;
+      done = true; counters.delete(end); busy--;
+      try {
+        if (tmp.parentNode === strong) strong.replaceChild(orig, tmp);   // o MESMO nó Text
+        if (aria === null) strong.removeAttribute('aria-hidden'); else strong.setAttribute('aria-hidden', aria);
+        if (sr.parentNode) sr.parentNode.removeChild(sr);
+      } catch (err) { report(err); }
+      maybeCleanup();
+    };
+    end.el = strong;
+    busy++; counters.add(end);
     strong.replaceChild(tmp, orig);
     strong.setAttribute('aria-hidden', 'true');
     strong.parentNode.insertBefore(sr, strong.nextSibling);
     var t0 = performance.now() + D + 150;
-    var end = function () {
-      if (done) return;
-      done = true; counters.delete(end);
-      strong.replaceChild(orig, tmp);            // o MESMO nó Text
-      if (aria === null) strong.removeAttribute('aria-hidden'); else strong.setAttribute('aria-hidden', aria);
-      if (sr.parentNode) sr.parentNode.removeChild(sr);
-      busy--; maybeCleanup();
-    };
-    counters.add(end);
     var tick = function (now) {
       if (done) return;
-      var p = Math.min(1, Math.max(0, (now - t0) / 1400)), e = 1 - Math.pow(1 - p, 3);
-      tmp.data = m[1] + Math.round(e * target) + m[3];
-      if (p >= 1) end(); else requestAnimationFrame(tick);
+      try {
+        var p = Math.min(1, Math.max(0, (now - t0) / 1400)), e = 1 - Math.pow(1 - p, 3);
+        tmp.data = m[1] + Math.round(e * target) + m[3];
+        if (p >= 1) end(); else requestAnimationFrame(tick);
+      } catch (err) { report(err); end(); }
     };
     requestAnimationFrame(tick);
   }
@@ -488,10 +566,7 @@
   function settleRecord(r) {
     if (r.done) return;
     r.done = true;
-    if (r.obs) {
-      var g = trig.get(r.el);                    // gatilho de grupo: só sai quando o grupo todo assentou
-      if (!g || g.every(function (x) { return x.done; })) r.obs.unobserve(r.el);
-    }
+    unobs(r);
     [r.el].concat(r.deps.map(function (x) { return x.el; })).forEach(function (el) {
       if (el.hasAttribute('data-anim')) { el.removeAttribute('data-anim'); el.classList.remove('is-in'); }
       pending.delete(el);
@@ -501,6 +576,9 @@
 
   function startRecord(r, D, ctx) {
     if (halt) { r.done = false; settleRecord(r); return; }
+    try { startRecordRaw(r, D, ctx); } catch (err) { report(err); release(r); }
+  }
+  function startRecordRaw(r, D, ctx) {
     var e = r.e, k = 0, vr = null, fe = e;
     if (r.extra && e.dur) { fe = {}; for (var key in e) fe[key] = e[key]; fe.dur = e.dur + r.extra; }
     var tail = runFx(r.el, fe, D);
@@ -525,16 +603,23 @@
     if (e.fx === 'none') settle(r.el);
   }
 
-  function waitImg(img, cap, decode) {
-    if (!img) return Promise.resolve();
-    var p = decode && img.decode ? img.decode().catch(noop)
-      : (img.complete ? Promise.resolve() : new Promise(function (res) {
-          img.addEventListener('load', res, { once: true }); img.addEventListener('error', res, { once: true });
-        }));
-    return Promise.race([p, wait(cap)]);
+  // Espera o load (nunca img.decode(): decodifica no tamanho intrínseco com outro
+  // filtro e o raster final deixava de bater com o estático; ver ANIMACOES.md)
+  function waitImg(img, cap) {
+    if (!img || img.complete) return Promise.resolve();
+    return Promise.race([new Promise(function (res) {
+      img.addEventListener('load', res, { once: true }); img.addEventListener('error', res, { once: true });
+    }), wait(cap)]);
   }
 
   function fire(batch) {
+    batch.forEach(function (r) { r.queued = false; });
+    try { fireRaw(batch); } catch (err) {
+      report(err);
+      batch.forEach(function (r) { if (!r.started) release(r); });
+    }
+  }
+  function fireRaw(batch) {
     if (!batch.length) return;
     batch.sort(function (a, b) { return a.el.compareDocumentPosition(b.el) & 4 ? -1 : 1; });
     var now = performance.now(), base = Math.max(0, minStart - now), groups = {};
@@ -562,43 +647,64 @@
       var minRaw = Math.min.apply(null, list.map(function (r) { return r.raw; }));
       list.forEach(function (r) {
         var D = r.raw - minRaw + base, e = r.e, ctx = { li: r.li, ls: r.ls };
-        r.done = true;
+        r.done = true; r.started = true;
         if (e.decode || e.load) {
           var img = e.load ? r.el : r.el.querySelector(e.decode);
-          waitImg(img, e.load || 300, !!e.decode).then(function () { startRecord(r, D, ctx); });
+          var go = function () { startRecord(r, D, ctx); };
+          try { waitImg(img, e.load || 300).then(go, go); } catch (err) { report(err); go(); }
         } else startRecord(r, D, ctx);
       });
     });
   }
 
-  // Recuperação: alvos pulados (acima da tela) assentam na hora, sem animação
-  // Leituras primeiro, escritas depois (sem intercalar layout e DOM)
-  function catchUp(batch, all) {
-    var vh = w.innerHeight, list = [], rects = [];
-    records.forEach(function (r) { if (!r.done && r.obs && batch.indexOf(r) < 0) list.push(r); });
+  // Sai do observador quando nenhum registro que depende daquele alvo está pendente
+  function unobs(r) {
+    if (!r.obs) return;
+    var g = trig.get(r.oel);
+    if (!g || g.every(function (x) { return x.done || x.queued; })) r.obs.unobserve(r.oel);
+  }
+
+  // Recuperação. Leituras primeiro, escritas depois (sem intercalar layout e DOM).
+  // - acima da tela (pulado por âncora/salto): assenta na hora, sem animação;
+  // - na faixa IN (na tela, topo acima de 88%): entra no lote e anima — cobre saltos
+  //   instantâneos em que o observador de um alvo nunca viu a interseção;
+  // - colegas de trecho (mates) que estão abaixo: entram no lote (o trecho dispara junto);
+  // - sentinela (all): o que sobrar assenta.
+  function catchUp(batch, all, mates) {
+    var vh = w.innerHeight, band = vh * 0.88, list = [], rects = [];
+    records.forEach(function (r) { if (!r.done && r.obs && !r.queued) list.push(r); });
     list.forEach(function (r) { rects.push(r.el.getBoundingClientRect()); });
     list.forEach(function (r, i) {
       var b = rects[i];
-      if (r.done) return;
-      if (b.bottom < 0) settleRecord(r);
-      else if (all) {                            // sentinela: na tela anima, o resto assenta
-        if (b.top < vh && b.bottom > 0) { r.obs.unobserve(r.el); batch.push(r); } else settleRecord(r);
-      }
+      if (r.done || r.queued) return;
+      if (b.bottom < 0) { settleRecord(r); return; }
+      var inBand = b.top < (all ? vh : band) && b.bottom > 0;
+      if (inBand || mates.indexOf(r) >= 0) { r.queued = true; batch.push(r); unobs(r); }
+      else if (all) settleRecord(r);
     });
   }
 
   function onIn(entries, obs) {
-    var batch = [], sentinel = false;
+    var batch = [];
+    try { onInRaw(entries, obs, batch); } catch (err) {
+      report(err);
+      batch.forEach(function (r) { if (!r.started) release(r); });
+    }
+  }
+  function onInRaw(entries, obs, batch) {
+    var sentinel = false, mates = [];
     entries.forEach(function (en) {
       if (!en.isIntersecting) return;
       obs.unobserve(en.target);
       (trig.get(en.target) || []).forEach(function (r) {
-        if (r.done || batch.indexOf(r) >= 0) return;
-        batch.push(r); if (r.e.sentinel) sentinel = true;
+        if (r.done || r.queued) return;
+        r.queued = true; batch.push(r); if (r.e.sentinel) sentinel = true;
+        (r.chunk || []).forEach(function (m) { if (!m.done && !m.queued && mates.indexOf(m) < 0) mates.push(m); });
       });
     });
     if (!batch.length) return;                   // callback vazio (ex.: o inicial): nada a medir
-    catchUp(batch, sentinel);
+    catchUp(batch, sentinel, mates);
+    batch.forEach(function (r) { r.queued = false; });
     fire(batch);
   }
 
@@ -610,7 +716,7 @@
       var r = recOf.get(n) || depOf.get(n);
       if (r && !r.done && hit.indexOf(r) < 0) hit.push(r);
     }
-    hit.forEach(settleRecord);
+    hit.forEach(function (r) { try { settleRecord(r); } catch (err) { report(err); hardStop(); } });
   }
 
   /* ---------------------------------------------------------
@@ -619,7 +725,7 @@
   function maybeCleanup() {
     if (!booted || cleaned || pending.size || running.size || busy || splits.size || counters.size || !heroDone) return;
     cleaned = true;
-    html.classList.remove('js-anim', 'anim-ready');
+    html.classList.remove('js-anim', 'anim-ready', 'hero-anim');
     heroEls.forEach(function (el) { el.classList.remove('is-in'); });
     [ioIn, ioFoot, ioPre].forEach(function (o) { if (o) o.disconnect(); });
     w.removeEventListener('resize', onResize);
@@ -659,17 +765,20 @@
     heroEls = $$('.hero__eyebrow, .hero .t-display, .hero__desc, .hero__actions .btn');
     var hero = q('.hero');
     var finishStatic = function () { heroEls.forEach(function (el) { el.classList.add('is-in'); }); heroDone = true; };
-    if (!items.length || bootAt > 1400 || !hero || heroBottom <= 0) { finishStatic(); return; }
+    // Sem html.hero-anim (lite, ou o timer do gate venceu os 1400 ms) o hero nunca foi escondido
+    if (!items.length || bootAt > 1400 || !hero || heroBottom <= 0 || !html.classList.contains('hero-anim')) { finishStatic(); return; }
     heroDone = false; heroLeft = items.length;
     var after = function () { if (--heroLeft <= 0) { heroDone = true; maybeCleanup(); } };
     var go = function () {
       if (heroDone) return;
       if (halt) { finishStatic(); maybeCleanup(); return; }
       minStart = performance.now() + 500;        // nada abaixo da dobra antes de T0 + 500
-      items.forEach(function (it) {
-        if (it.lines) runLines(it.el, it.at, { dur: 950 }, after);
-        else play(it.el, UP(dist(it.d)), { dur: it.dur, delay: it.at, after: after });
-      });
+      try {
+        items.forEach(function (it) {
+          if (it.lines) runLines(it.el, it.at, { dur: 950 }, after);
+          else play(it.el, UP(dist(it.d)), { dur: it.dur, delay: it.at, after: after });
+        });
+      } catch (err) { report(err); finishStatic(); maybeCleanup(); }
     };
     if (bootAt > 1000 || !d.fonts || !d.fonts.load) { go(); return; }
     Promise.race([d.fonts.load('300 64px "Stack Sans Headline"'), wait(300)]).then(go, go);
@@ -707,6 +816,7 @@
         (cs.clipPath !== 'none') || (cs.opacity === '0' && !e.closest('.testimonial, .docs__art, .about__slides, .doc__head, .nav, .hero-slider > .hero:not(.is-current)'));
     });
     check('sem translate/scale/clip-path/opacity residual', !stuck.length, stuck.slice(0, 5).map(function (e) { return e.className; }).join(', '));
+    check('sem erros em tempo de execução', !faults, faults);
     check('sem scroll horizontal', html.scrollWidth === html.clientWidth, html.scrollWidth + '/' + html.clientWidth);
     rows.forEach(function (r) { res[r.asserção] = r.ok; });
     w.__animAudit = rows;
@@ -781,19 +891,23 @@
         getSvg(en.target.currentSrc || en.target.src);
       });
     }, { rootMargin: '800px 0px' });
-    // Listas escalonadas (lote/diag): um único alvo observado por trecho de lista
-    // (o 1º item pendente; novo trecho a cada meia tela) → ~1/3 dos alvos no IO
+    // Todo alvo marcado é observado (salto instantâneo nunca deixa item sem gatilho).
+    // Listas escalonadas (lote/diag) formam trechos de meia tela: quando um item do
+    // trecho dispara, os colegas pendentes entram no mesmo lote (o escalonamento vem do lote).
+    // wipe-y começa com clip-path de altura 0 e o IO usa a caixa recortada → observa o pai.
     var chunk = null;
     records.forEach(function (r) {
       r.obs = r.e.foot ? ioFoot : ioIn;
+      r.oel = r.e.fx === 'wipe-y' ? r.el.parentElement : r.el;
       var par = (r.e.lote || r.e.diag) ? (r.e.diag ? r.el.closest('ul, ol') : r.el.parentElement) : null;
       if (par && chunk && chunk.e === r.e && chunk.par === par && r.top - chunk.top < vh * 0.5) {
-        trig.get(chunk.el).push(r);
+        chunk.list.push(r);
       } else {
-        chunk = par ? { e: r.e, par: par, top: r.top, el: r.el } : null;
-        trig.set(r.el, (trig.get(r.el) || []).concat([r]));
-        r.obs.observe(r.el);
+        chunk = par ? { e: r.e, par: par, top: r.top, list: [r] } : null;
       }
+      if (chunk) r.chunk = chunk.list;
+      trig.set(r.oel, (trig.get(r.oel) || []).concat([r]));
+      r.obs.observe(r.oel);
       if (!lite) r.deps.forEach(function (x) { if (x.e.fx === 'draw') ioPre.observe(x.el); });
     });
     d.addEventListener('focusin', onFocus, true);
@@ -805,7 +919,7 @@
     booted = true;
     maybeCleanup();
   } catch (err) {
-    html.classList.remove('js-anim', 'anim-ready');
+    html.classList.remove('js-anim', 'anim-ready', 'hero-anim');
     if (w.console) console.error('[animations]', err);
   }
 })();

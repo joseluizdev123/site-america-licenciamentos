@@ -698,7 +698,8 @@ html[data-hero="socio"] .hero--socio { visibility: visible; opacity: 1; }
 @media (prefers-reduced-motion: no-preference) {
 
   /* ---- 1. Estados iniciais: só existem com html.js-anim ---- */
-  html.js-anim :is(.hero__eyebrow, .hero .t-display, .hero__desc, .hero__actions .btn):not(.is-in) { opacity: 0; }
+  /* Hero: só com html.hero-anim (gate: desktop não-lite; sai aos 1400 ms se o motor não subir) */
+  html.js-anim.hero-anim :is(.hero__eyebrow, .hero .t-display, .hero__desc, .hero__actions .btn):not(.is-in) { opacity: 0; }
   html.js-anim [data-anim]:not(.is-in):not([data-anim^="wipe"]):not([data-anim="chapter"]) { opacity: 0; }
   html.js-anim [data-anim="wipe-x"]:not(.is-in) { clip-path: inset(0 100% 0 0); }
   html.js-anim [data-anim="wipe-y"]:not(.is-in) { clip-path: inset(0 0 100% 0); }
@@ -708,8 +709,8 @@ html[data-hero="socio"] .hero--socio { visibility: visible; opacity: 1; }
   html.js-anim [data-anim]:focus-within,
   html.js-anim .hero__actions .btn:focus { opacity: 1 !important; clip-path: none !important; }
 
-  /* Failsafe do hero: se o animations.js não subir em 1,5 s, o hero aparece */
-  html.js-anim:not(.anim-ready) :is(.hero__eyebrow, .hero .t-display, .hero__desc, .hero__actions .btn) {
+  /* Failsafe CSS extra do hero (o principal é o timer de 1400 ms do gate) */
+  html.js-anim.hero-anim:not(.anim-ready) :is(.hero__eyebrow, .hero .t-display, .hero__desc, .hero__actions .btn) {
     animation: a-failsafe 1ms 1500ms forwards;
   }
 
